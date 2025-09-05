@@ -89,49 +89,22 @@ import requests, time, matplotlib.pyplot as plt
 ```
 
 **Key Metrics:**
-- Total Requests: ~X requests
-- Average Response Time: X.X ms
-- 95th Percentile: X.X ms
-- Max Response Time: X.X ms
+- Total Requests: ~180 requests
+- Average Response Time: 165.4 ms
+- 95th Percentile: 425.8 ms
+- Max Response Time: 615.9 ms
 
-**Screenshot Placeholder: Response time histogram**
-**Screenshot Placeholder: Response times over time plot**
+![alt text](image.png)
 
-## Learning Outcomes
-
-**Go Concepts:**
-- `go mod init` - Initialize module and dependency management
-- `go get .` - Download and install dependencies
-- RESTful API structure with Gin framework
-
-**Cloud Deployment:**
-- **Localhost vs Cloud**: Local development vs remote server hosting
-- **Security Groups**: Firewall rules for port access (SSH:22, HTTP:8080)
-- **Cross-compilation**: Building binaries for different OS/architecture
-- **SSH**: Secure shell access to remote servers
-
-**Performance Insights:**
-- Response time distribution shows "long tail" behavior
-- Network latency vs processing time impact
-- Single-instance limitations and scaling considerations
-
-## Troubleshooting
-
-**Permission Issues:**
-```bash
-sudo chmod -R 777 <filename>
-```
-
-**Architecture Mismatch:**
-Try different GOARCH: `arm64` instead of `amd64`
-
-**Security Group:**
-Ensure port 8080 is open for inbound traffic
-
-## Files Structure
-```
-├── main.go           # API server code
-├── go.mod           # Module definition  
-├── albums-server    # Compiled binary
-└── load_test.py     # Performance testing
-```
+1. Distribution Shape:
+The histogram shows a clear long tail with most requests around 70-150ms but outliers reaching 600ms+. Approximately 10-15% of requests fall into the "slow" category (>300ms).
+2. Consistency:
+Response times are highly inconsistent with dramatic spikes - requests can jump from 70ms to 500ms+ then back to 70ms. There's no clear pattern, indicating unpredictable resource contention or throttling.
+3. Percentiles:
+The large gap between median (~120ms) and 95th percentile (~400-500ms) indicates very high variability. This 3-4x difference shows that while most users get decent performance, the worst 5% experience significantly degraded service.
+4. Infrastructure Impact:
+The t2.micro's burstable CPU credits get exhausted under sustained load, causing throttling and response time spikes. Single vCPU and shared hardware resources create unpredictable performance bottlenecks.
+5. Scaling Implications:
+With 100 concurrent users, the single-threaded server would queue requests leading to timeout failures and response times in seconds. The system would likely become unresponsive due to resource exhaustion.
+6. Network vs. Processing:
+Both factors contribute - baseline 70ms suggests network latency, while 500-600ms spikes indicate server-side delays from CPU throttling. Testing locally on the EC2 instance with curl would isolate network vs processing time.

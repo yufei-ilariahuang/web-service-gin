@@ -57,16 +57,18 @@ API comes pre-loaded with jazz albums:
 
 <img width="797" height="300" alt="image" src="https://github.com/user-attachments/assets/b8a4470e-c4ab-411c-9815-4598e2bfe642" />
 
-1. What does go mod init do?
-Initializes a new Go module in the current directory and creates a go.mod file to track dependencies. It sets up the module path/name that other packages can use to import your code.
-2. What does go get . do?
+**1. What does go mod init do?**
+Initializes a new Go module in the current directory and creates a go.mod file to track dependencies. It sets up the module path/name that other packages can use to import code.
+**2. What does go get . do?**
 Downloads and installs all dependencies listed in the go.mod file for the current module. The dot (.) refers to the current directory/module.
-Structuring server code as a RESTful API:
-1. RESTful API Structure:
+
+**Structuring server code as a RESTful API:**
+
+**1. RESTful API Structure:**
 Organizes HTTP endpoints using standard methods (GET, POST, PUT, DELETE) mapped to resource URLs like /albums and /albums/:id. Each endpoint handles specific CRUD operations with JSON request/response bodies and appropriate HTTP status codes.
-2. Localhost vs GCP and Subnets:
-localhost (127.0.0.1) refers to your local machine's loopback interface, only accessible from that machine. GCP runs on remote servers with public IP addresses accessible from anywhere; subnets isolate and organize cloud resources within private IP ranges for security and network management.
-3. Multiple Terminal Windows and curl Testing:
+**2. Localhost vs GCP and Subnets:**
+localhost (127.0.0.1) refers to local machine's loopback interface, only accessible from that machine. GCP runs on remote servers with public IP addresses accessible from anywhere; subnets isolate and organize cloud resources within private IP ranges for security and network management.
+**3. Multiple Terminal Windows and curl Testing:**
 Use one terminal to run the server (go run main.go) and another for testing requests (curl localhost:8080/albums). This workflow allows real-time testing while keeping the server running, enabling rapid development and debugging cycles.
 ## Part II: AWS EC2 Deployment
 
@@ -111,15 +113,15 @@ import requests, time, matplotlib.pyplot as plt
 
 ![alt text](image.png)
 
-1. Distribution Shape:
+**1. Distribution Shape:**
 The histogram shows a clear long tail with most requests around 70-150ms but outliers reaching 600ms+. Approximately 10-15% of requests fall into the "slow" category (>300ms).
-2. Consistency:
+**2. Consistency:**
 Response times are highly inconsistent with dramatic spikes - requests can jump from 70ms to 500ms+ then back to 70ms. There's no clear pattern, indicating unpredictable resource contention or throttling.
-3. Percentiles:
+**3. Percentiles:**
 The large gap between median (~120ms) and 95th percentile (~400-500ms) indicates very high variability. This 3-4x difference shows that while most users get decent performance, the worst 5% experience significantly degraded service.
-4. Infrastructure Impact:
+**4. Infrastructure Impact:**
 The t2.micro's burstable CPU credits get exhausted under sustained load, causing throttling and response time spikes. Single vCPU and shared hardware resources create unpredictable performance bottlenecks.
-5. Scaling Implications:
+**5. Scaling Implications:**
 With 100 concurrent users, the single-threaded server would queue requests leading to timeout failures and response times in seconds. The system would likely become unresponsive due to resource exhaustion.
-6. Network vs. Processing:
+**6. Network vs. Processing:**
 Both factors contribute - baseline 70ms suggests network latency, while 500-600ms spikes indicate server-side delays from CPU throttling. Testing locally on the EC2 instance with curl would isolate network vs processing time.

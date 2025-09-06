@@ -48,10 +48,14 @@ API comes pre-loaded with jazz albums:
 ## Part I: Local Host & GCP Deployment
 
 **Local Host Test**
+
 ![img.png](img.png)
 ![img_1.png](img_1.png)
 
-**Screenshot Placeholder: GCP deployment running**
+**GCP deployment running**
+<img width="853" height="227" alt="image" src="https://github.com/user-attachments/assets/03c3785e-1899-4a32-9280-9046b351e68c" />
+
+<img width="797" height="300" alt="image" src="https://github.com/user-attachments/assets/b8a4470e-c4ab-411c-9815-4598e2bfe642" />
 
 ## Part II: AWS EC2 Deployment
 

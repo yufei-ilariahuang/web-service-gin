@@ -1,1 +1,3 @@
 .terraform/
+/HW2/terraform.tfvars
+/1st-keyPair.pem

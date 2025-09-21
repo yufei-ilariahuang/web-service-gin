@@ -1,0 +1,27 @@
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    ports:
+      - "5001:5000"
+
+  master:
+    image: locustio/locust
+    ports:
+      - "8089:8089" # Web UI
+      - "5557:5557" # Communication with workers
+      - "5558:5558"
+    volumes:
+      - ./locustfile.py:/mnt/locust/locustfile.py
+    command: -f /mnt/locust/locustfile.py --master -H http://server:5000
+
+  worker:
+    image: locustio/locust
+    volumes:
+      - ./locustfile.py:/mnt/locust/locustfile.py
+    command: -f /mnt/locust/locustfile.py --worker --master-host master
+    depends_on:
+      - master
+      - server

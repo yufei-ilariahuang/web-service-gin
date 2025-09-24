@@ -6,5 +6,9 @@
 # Datasource local storage ignored files
 /dataSources/
 /dataSources.local.xml
-/terraform.tfvars
-
+HW2/terraform.tfvars
+/1st-keyPair.pem
+# Ignore Terraform state and providers
+.terraform/
+*.tfstate
+*.tfstate.backup

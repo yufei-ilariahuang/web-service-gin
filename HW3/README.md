@@ -257,3 +257,203 @@ When `GOMAXPROCS` is set to 1, both goroutines are scheduled on the same OS thre
 In conclusion, the cost of a Go goroutine context switch is remarkably low because it is managed by the Go runtime in user space, avoiding the overhead of kernel-level scheduling. For highly communicative tasks, as demonstrated in this experiment, constraining goroutines to a single OS thread can be faster than allowing them to run on multiple threads due to the elimination of OS-level synchronization overhead. This illustrates a fundamental trade-off between the cost of communication and the benefits of parallelism.
 
 # PART3
+
+1.  **Launch Everything:** 
+    ```bash
+    # start docker
+    docker compose up -d --scale worker=1
+    #Get
+    curl http://localhost:5001/data/key-0
+    # Post
+    curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"key": "test-key-123", "value": "hello-world"}' \
+  http://localhost:5001/data
+    # stop server
+    docker compose down
+
+    ```
+    This command builds and starts your server, the Locust master, and one worker.
+    ![alt text](image-8.png)
+    ![alt text](image-9.png)
+
+2.  **Access the Locust UI:** Open your web browser and navigate to `http://localhost:8089`.
+
+3.  **Start the Test:**
+    *   **Number of users:** 1
+    *   **Spawn rate:** 1
+    *   Click "Start swarming".
+![alt text](image-10.png)
+![alt text](image-11.png)
+
+### Do you see any failures?
+
+No. The most important initial result is in the `# Fails` column. I have **zero failures** for both GET and POST requests. 
+
+### What is going on here? 
+
+#### 1. Response Time (Median, 95th Percentile)
+
+*   **GET Request (Median: 7ms):** A GET request in server simply performs a lookup in a Python dictionary (a hash map), with an average time complexity of **O(1)**, or constant time. The 7ms is the minimal overhead of the network request plus this lightning-fast in-memory lookup.
+
+*   **POST Request (Median: 45ms):** This is slower (over 6 times slower than the GET). The reason is that a POST request inherently does more work:
+    1.  It must receive and parse the incoming JSON data from the request body.
+    2.  It needs to perform a write operation to insert the new key-value pair into the dictionary.
+    3.  **Most importantly**, the sample `server.py` code includes an artificial delay: `time.sleep(random.uniform(0.01, 0.05))`. This line was added specifically to simulate the real-world latency of a write operation, which is almost always slower than a read. This delay (between 10ms and 50ms) is the primary contributor to the ~45ms median response time. In a real application, this delay would represent writing to a database, updating search indexes, writing to a log file, etc.
+
+#### 2. Throughput (Requests Per Second - RPS)
+
+The `Current RPS` shows GET requests happening at `0.5 RPS` and POSTs at `0.1 RPS`. This difference is caused by two factors:
+
+*   **Request Speed:** Since a single virtual user is performing the tasks, and each GET task finishes much faster than a POST task, the user can naturally complete more GETs in the same amount of time.
+*   **Task Weighting:** In the `locustfile.py`, the tasks are weighted: `@task(2)` for GET and `@task(1)` for POST. This explicitly tells the Locust user to *attempt* to perform GET requests twice as often as POST requests.
+
+
+### Tradeoffs 
+
+#### Which operations will be most common in a real-world scenario?
+
+For the vast majority of web applications (e-commerce sites, social media feeds, news portals, blogs), the workload is overwhelmingly **read-heavy**. Users spend far more time browsing content, viewing products, and reading articles (GET requests) than they do creating new content, posting comments, or making purchases (POST requests). A typical read-to-write ratio is often estimated to be 90:10, and in many cases, it's closer to 99:1.
+
+#### How does that impact the data structure you are using to save your data?
+
+This read-heavy reality is the single most important consideration for system design and data structure choice.
+
+1.  **Optimizing for the Common Case:** Since reads are the most frequent operation, the entire system must be optimized for fast, efficient reads.
+2.  **Validating Your Choice (Hash Map):** Your current implementation using an in-memory dictionary (hash map) is an **excellent choice** for a read-heavy workload. Its O(1) average read time is the best-case scenario, ensuring the most common user operation is served as quickly as possible. Your load test results perfectly validate this, with a median read time of just 7ms.
+3.  **Architectural Implications (Caching):** This principle is the entire reason for the existence of caching layers (like Redis or Memcached). A cache is essentially a fast, in-memory key-value store (a distributed hash map) that sits in front of the slower, persistent database. Because reads are so frequent, serving them from an in-memory cache provides a massive performance boost and protects the database from being overwhelmed with read requests. Your experiment is a perfect micro-level simulation of why this architecture is so effective.
+
+## Local Test
+
+GET and POST tasks ratios 3:1
+1 worker
+50 users
+10 users per second ramp up time
+```bash
+    # start docker
+    docker compose up -d --scale worker=1
+
+    # monitor container resources usage
+
+    docker stats
+
+    # stop server
+    docker compose down
+
+```
+    ![alt text](image-12.png)
+    ![alt text](image-13.png)
+    ![alt text](image-14.png)
+
+    This is a fantastic set of results, and they tell a very interesting and positive story about your setup. The data from your `docker stats` and Locust UI are perfectly correlated and reveal exactly how your system is performing under this specific load.
+
+#### 1. Good Performance (Median & 95th Percentile)
+
+even with 50 users. In fact, they are **even better than the results from the initial 1-user test.**
+
+*   **GET Median (4ms):** A 4-millisecond median response time is phenomenal. It's essentially the theoretical minimum for a network request plus a near-instant in-memory lookup.
+*   **POST Median (36ms):** This is also excellent. It's dominated by the artificial `time.sleep()` in your server code, but it shows that even write operations are being handled very quickly.
+*   **Tight Distribution (95%ile):** The 95th percentile for GETs is only 9ms. This means there is almost no "long-tail latency." Your server is not only fast, but its performance is also incredibly consistent and predictable.
+
+So, the big question is: **How is this possible with 50 users?** The answer lies in the resource utilization.
+
+#### 2. The Clue: Low CPU Usage
+
+Look at `docker stats` output. Yload-testing-server-1` container is only using **9% CPU**.
+
+The server is not the bottleneck in your system. It is handling the ~33 requests per second with ease and is spending most of its time idle, waiting for the next request to arrive. It is not being stressed at all.
+
+#### 3. Conclusion: The Bottleneck is the Client, Not the Server
+
+The reason server isn't overwhelmed is the `wait_time` in`locustfile.py`:
+
+```bash
+wait_time = between(1, 2)
+```
+
+## Amdahl's Law
+GET and POST tasks ratios 3:1
+4 worker
+50 users
+10 users per second ramp up time
+```bash
+    # start docker
+    docker compose up -d --scale worker=4
+
+    # monitor container resources usage
+
+    docker stats
+
+    # stop server
+    docker compose down
+
+```
+![alt text](image-15.png)
+![alt text](image-16.png)
+#### RPS
+50 users.
+Each user waits an average of 1.5 seconds between tasks.
+Maximum possible RPS = (Number of Users) / (Average Wait Time) = 50 / 1.5 ≈ 33.3 RPS
+
+This calculation matches observed throughput of 33 RPS. Adding more workers doesn't change this, because the 50 users themselves are the limiting factor. You could have 1 worker or 100 workers; as long as they can handle the requests from 50 users who are waiting most of the time, the total RPS will not change.
+
+#### Re-evaluating Amdahl's Law
+We tried to parallelize the "load generation" part of our system by adding more workers. However, Amdahl's Law states that the speedup is limited by the serial portion of the task.
+
+In this specific test, the dominant serial component was not the server; it was the mandatory wait time. Each user's workflow has a serial wait() step that cannot be sped up by adding more workers. Since this waiting period constituted the vast majority of each user's "cycle time," the overall system throughput was completely dictated by it.
+
+#### The Hash Map Contention Question
+
+Based on these results, hash map contention is not a factor
+
+The server is under such a low load (~7% CPU) that it handles each of the 33 incoming requests per second with ease. The requests are arriving slowly enough that the single-threaded Flask server can process one, finish, and then wait for the next. There is no "contention" because there is no parallel execution happening inside the server.
+
+## Context Switching - change HttpUser to FastHttpUser
+```bash
+    # start docker
+    docker compose up -d --scale worker=4
+
+    # monitor container resources usage
+
+    docker stats
+
+    # stop server
+    docker compose down
+
+```
+4 workers and 50 users 
+![alt text](image-18.png)
+![alt text](image-17.png)
+
+**Observation:**
+
+The most dramatic change is the **massive increase in total throughput (RPS)**. With `FastHttpUser`, our 4 workers were able to generate nearly three times as many requests per second as they could with the standard `HttpUser`. This happened even though the server was completely saturated (over 100% CPU)
+
+By changing code from HttpUser to FastHttpUser, the throughput of load test increased by a factor of nearly 20. Went from generating under 100 requests per second to over 1,670 requests per second.
+At the same time, the response times (Median and 95th percentile) remained low and incredibly stable. 
+
+**Reasoning: The Under-the-Hood Difference**
+
+The reason for this stark difference lies in how these two clients are built and how they interact with Python's concurrency model, which brings us directly to the topic of **Context Switching**.
+
+1.  **`HttpUser` and `requests`:**
+    *   The standard `HttpUser` uses the famous `requests` library.
+    *   `requests` is a **synchronous** library. When it makes a network call, it blocks the thread until a response comes back.
+    *   To achieve concurrency, Locust runs `requests` on top of `gevent`, which uses a technique called "monkey-patching." Gevent cleverly replaces Python's standard blocking I/O calls with non-blocking equivalents. When `requests` tries to wait for the network, `gevent` intercepts this and performs a **context switch** to another "green thread" (one of your virtual users).
+    *   **The Cost:** While this works, there is overhead. `requests` is a feature-rich, pure-Python library. The monkey-patching adds a layer of abstraction, and the execution of the library's Python code takes CPU cycles on the worker.
+
+2.  **`FastHttpUser` and `geventhttpclient`:**
+    *   `FastHttpUser` uses a different library called `geventhttpclient`.
+    *   This library was **built from the ground up to be asynchronous and gevent-native**. It doesn't need to be monkey-patched. It is designed to cooperate perfectly with the gevent event loop.
+    *   Crucially, large parts of `geventhttpclient` (like the HTTP parser) are written in **C**. This means they execute as fast, compiled machine code, not as slower, interpreted Python code.
+
+**Connecting to Context Switching and Go:**
+
+This is the exact same principle as the Go goroutine experiment
+
+*   Gevent's "green threads" are Python's equivalent of Go's "goroutines." They are extremely lightweight threads managed by the application (the Locust process) in **user-space**, not by the operating system.
+*   A **context switch** between green threads is incredibly cheap. It doesn't require a system call to the OS kernel. It's a simple function call that saves the current state (like the instruction pointer) and switches to another green thread's state.
+*   `FastHttpUser` is so much faster because it is a highly-optimized C extension that is purpose-built for this type of rapid, user-space context switching. It yields control back to the gevent scheduler efficiently, allowing the Locust worker to juggle its 50 users (or thousands of users) with minimal CPU overhead.
+*   `HttpUser`, with its reliance on the pure-Python `requests` library and monkey-patching, has more overhead for each request and context switch. This overhead consumes CPU on the worker, limiting how fast it can generate new requests, which is why it couldn't fully saturate the server to the same degree as `FastHttpUser`.
+
+In conclusion, by switching to `FastHttpUser`, it moved from a general-purpose tool adapted for concurrency to a specialized tool designed for it, dramatically reducing the cost of context switching and request processing on the client side, thereby unlocking a much higher potential throughput for your load tests.

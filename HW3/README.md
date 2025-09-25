@@ -240,12 +240,26 @@ go run . -run=fileAccess
 ```
 ![alt text](image-7.png)
 
-*   **Single OS Thread is Faster:** The average context switch time in the single-threaded version is expected to be lower than in the multi-threaded version.
+**Why single-thread is often faster:**
 
-When `GOMAXPROCS` is set to 1, both goroutines are scheduled on the same OS thread. When one goroutine sends a value on the unbuffered channel, it blocks. The Go runtime scheduler then performs a context switch to the other goroutine, which is now ready to receive. This entire operation happens within the user space, managed by the Go runtime. It primarily involves saving the state of a few registers, such as the program counter and stack pointer, which is an extremely fast operation.
+User-space switching: No kernel involvement
+Same CPU cache: Data stays in L1/L2 cache
+No CPU migration: No moving goroutines between cores
+Simpler scheduling: Less coordination overhead
 
-    Conversely, with multiple OS threads, the Go scheduler might place each goroutine on a different thread, potentially running on different CPU cores. While this allows for true parallelism for CPU-bound tasks, for this communication-heavy benchmark, it introduces overhead. The synchronization required for the channel communication might involve more complex and costly operations at the operating system level to coordinate between the different threads. This can include memory cache synchronization between cores and potentially putting an OS thread to sleep and waking it up, which are significantly slower than a user-space context switch.
+**When Multi-Thread Might Win**
 
+Very modern CPUs with excellent cache coherency
+Specific Go runtime optimizations
+Different system architectures
+
+**Real-World Implications**
+This benchmark shows:
+
+Goroutines are lightweight - millions of switches in milliseconds
+GOMAXPROCS matters - more threads ≠ always faster
+Communication patterns matter - tight synchronization favors single-core
+Go's scheduler is optimized for user-space switching
 ### Broader Implications of Context Switching Costs
 
 *   **Processes:** A context switch between processes is managed by the operating system kernel and is considerably more expensive. It involves saving the entire process context, which includes all CPU registers, memory maps, and other OS-specific data structures. This can take several microseconds.

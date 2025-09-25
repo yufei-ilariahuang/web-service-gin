@@ -242,24 +242,22 @@ go run . -run=fileAccess
 
 **Why single-thread is often faster:**
 
-User-space switching: No kernel involvement
-Same CPU cache: Data stays in L1/L2 cache
-No CPU migration: No moving goroutines between cores
-Simpler scheduling: Less coordination overhead
+1. User-space switching: No kernel involvement
+2. Same CPU cache: Data stays in L1/L2 cache
+3. No CPU migration: No moving goroutines between cores
+4. Simpler scheduling: Less coordination overhead
 
 **When Multi-Thread Might Win**
 
-Very modern CPUs with excellent cache coherency
-Specific Go runtime optimizations
-Different system architectures
+1. Very modern CPUs with excellent cache coherency
+2. Specific Go runtime optimizations
+3. Different system architectures
 
 **Real-World Implications**
-This benchmark shows:
-
-Goroutines are lightweight - millions of switches in milliseconds
-GOMAXPROCS matters - more threads ≠ always faster
-Communication patterns matter - tight synchronization favors single-core
-Go's scheduler is optimized for user-space switching
+1. Goroutines are lightweight - millions of switches in milliseconds
+2. GOMAXPROCS matters - more threads ≠ always faster
+3. Communication patterns matter - tight synchronization favors single-core
+4. Go's scheduler is optimized for user-space switching
 ### Broader Implications of Context Switching Costs
 
 *   **Processes:** A context switch between processes is managed by the operating system kernel and is considerably more expensive. It involves saving the entire process context, which includes all CPU registers, memory maps, and other OS-specific data structures. This can take several microseconds.

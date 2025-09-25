@@ -284,8 +284,7 @@ In conclusion, the cost of a Go goroutine context switch is remarkably low becau
     # stop server
     docker compose down
     ```
-    
-    This command builds and starts your server, the Locust master, and one worker.
+\
     ![alt text](image-8.png)
     ![alt text](image-9.png)
 

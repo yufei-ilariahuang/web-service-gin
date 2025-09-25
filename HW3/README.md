@@ -351,8 +351,8 @@ GET and POST tasks ratios 3:1
 
     # stop server
     docker compose down
-
 ```
+/
     ![alt text](image-12.png)
     ![alt text](image-13.png)
     ![alt text](image-14.png)

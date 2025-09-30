@@ -240,12 +240,24 @@ go run . -run=fileAccess
 ```
 ![alt text](image-7.png)
 
-*   **Single OS Thread is Faster:** The average context switch time in the single-threaded version is expected to be lower than in the multi-threaded version.
+**Why single-thread is often faster:**
 
-When `GOMAXPROCS` is set to 1, both goroutines are scheduled on the same OS thread. When one goroutine sends a value on the unbuffered channel, it blocks. The Go runtime scheduler then performs a context switch to the other goroutine, which is now ready to receive. This entire operation happens within the user space, managed by the Go runtime. It primarily involves saving the state of a few registers, such as the program counter and stack pointer, which is an extremely fast operation.
+1. User-space switching: No kernel involvement
+2. Same CPU cache: Data stays in L1/L2 cache
+3. No CPU migration: No moving goroutines between cores
+4. Simpler scheduling: Less coordination overhead
 
-    Conversely, with multiple OS threads, the Go scheduler might place each goroutine on a different thread, potentially running on different CPU cores. While this allows for true parallelism for CPU-bound tasks, for this communication-heavy benchmark, it introduces overhead. The synchronization required for the channel communication might involve more complex and costly operations at the operating system level to coordinate between the different threads. This can include memory cache synchronization between cores and potentially putting an OS thread to sleep and waking it up, which are significantly slower than a user-space context switch.
+**When Multi-Thread Might Win**
 
+1. Very modern CPUs with excellent cache coherency
+2. Specific Go runtime optimizations
+3. Different system architectures
+
+**Real-World Implications**
+1. Goroutines are lightweight - millions of switches in milliseconds
+2. GOMAXPROCS matters - more threads ≠ always faster
+3. Communication patterns matter - tight synchronization favors single-core
+4. Go's scheduler is optimized for user-space switching
 ### Broader Implications of Context Switching Costs
 
 *   **Processes:** A context switch between processes is managed by the operating system kernel and is considerably more expensive. It involves saving the entire process context, which includes all CPU registers, memory maps, and other OS-specific data structures. This can take several microseconds.
@@ -271,9 +283,8 @@ In conclusion, the cost of a Go goroutine context switch is remarkably low becau
   http://localhost:5001/data
     # stop server
     docker compose down
-
     ```
-    This command builds and starts your server, the Locust master, and one worker.
+\
     ![alt text](image-8.png)
     ![alt text](image-9.png)
 
@@ -339,8 +350,8 @@ GET and POST tasks ratios 3:1
 
     # stop server
     docker compose down
-
 ```
+/
     ![alt text](image-12.png)
     ![alt text](image-13.png)
     ![alt text](image-14.png)

@@ -280,12 +280,60 @@ curl "http://${REDUCER_IP}:8080/reduce?s3_keys=${MAPPER_RESULTS}" > reduce_respo
 ![alt text](image-4.png)
 ![alt text](image-5.png)
 ![alt text](image-6.png)
-3.  **Performance Analysis:** This is a key part of the interview showcase!
-    *   **Baseline (Single-threaded):** First, run a simple local Python script that does the entire word count on the full `example.txt` file. Time how long this takes. This is your baseline.
-    *   **Distributed Performance:** Time your distributed system. How long does the entire process take, from the first request to the splitter to getting the final URL from the reducer?
-    *   **Plot the results:** Create a simple bar chart comparing the two:
-        *   **X-axis:** "Execution Method" (with labels "Single-threaded Local" and "Distributed ECS")
-        *   **Y-axis:** "Time (seconds)"
-    *   **Experiment Further:** How does performance change if you split the file into 5 chunks instead of 3? Or 10? What happens if you use larger or smaller text files? Plotting these different scenarios can show a deep understanding of scaling and performance.
+3.  ### Performance Results
 
-By completing this project, you will have a powerful, real-world example of microservices, containerization, and cloud architecture to discuss in your interview. Good luck
+
+###  Execution Stability and Consistency
+
+Running the same distributed workflow multiple times on the **small file (163 KB)** yielded the following results, highlighting the **non-deterministic nature** of cloud timing:
+
+| Run | Total Distributed Time (seconds) |
+| :---: | :---: |
+| Run 1 | 1.163899 |
+| Run 2 | 0.904270 |
+| Run 3 | 0.857802 |
+| **Average** | **0.975324** |
+
+The difference between the slowest run (1.16s) and the fastest (0.86s) demonstrates significant **network jitter** and the impact of **container warmth** (ECS tasks becoming faster after the initial "cold" request). Using the average of $0.975$ seconds provides a more reliable metric.
+
+| File Size | Local Baseline Time (s) | Distributed Avg. Time (s) | Speedup (Local / Distributed) |
+| :---: | :---: | :---: | :---: |
+| **Small (163 KB)** | 0.0066 | 0.9753 | **0.007x** (Slowdown) |
+| **Large (6.5 MB)** | 0.1956 | 1.8866 | **0.104x** (Slowdown) |
+
+***
+
+## Key Findings: The Cost of Distribution
+
+The most critical insight from this data is that for both file sizes, the **distributed system is significantly slower** than the local baseline. This clearly illustrates the trade-off between **processing time** and **fixed overhead**.
+
+### A. Small File Analysis (163 KB)
+
+* **Local Time: $\approx 6.6 \text{ milliseconds}$** (nearly instantaneous).
+* **Distributed Time: $\approx 975 \text{ milliseconds}$** ($\approx 1$ second).
+
+The **$0.97 \text{ second}$ gap** represents the fixed cost of the distributed architecture, including:
+1.  **Network Latency:** Four separate HTTP requests over the internet (client $\rightarrow$ Splitter $\rightarrow$ Mappers $\rightarrow$ Reducer).
+2.  **S3 I/O:** Multiple S3 read/write operations (read full file, write 3 chunks, read 3 chunks, write 3 results, read 3 results).
+3.  **ECS Overhead:** Time for the Fargate tasks to accept and process the HTTP requests.
+
+For a file this small, the core word-counting job is trivial, and the **overhead is $147$ times larger** than the processing time.
+
+### B. Large File Analysis (6.5 MB)
+
+* **Local Time: $\approx 0.20 \text{ seconds}$.**
+* **Distributed Time: $\approx 1.89 \text{ seconds}$.**
+
+While still a slowdown, the ratio is improving:
+$$\text{Local Time} \uparrow \text{by } 2950\% \quad (0.0066 \text{s} \rightarrow 0.1956 \text{s})$$
+$$\text{Distributed Time} \uparrow \text{by } 93\% \quad (0.975 \text{s} \rightarrow 1.886 \text{s})$$
+
+As the file size increases, the **local processing time grows much faster** than the distributed overhead. The $\approx 1.7 \text{ second}$ overhead remains relatively constant, but the time saved by having three Mappers process the work in parallel starts to close the gap.
+
+***
+
+## 3. Conclusion on Scalability
+
+This experiment successfully demonstrates the initial **break-even point** challenge for distributed systems:
+
+The system is currently **I/O and Network bound** (bottlenecked by communication). To observe the anticipated performance speedup (where the speedup factor is $> 1$), the input file would need to be large enough (e.g., $100 \text{ MB}$ or larger) such that the **local processing time alone exceeds the $1.7 \text{ second}$ fixed overhead** of the distributed architecture.. 

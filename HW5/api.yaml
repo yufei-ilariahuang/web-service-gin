@@ -1,0 +1,95 @@
+openapi: 3.0.0
+info:
+  title: Simple E-commerce API
+  description: A simple API for an e-commerce system
+  version: 1.0.0
+servers:
+  - url: http://localhost:5000
+paths:
+  /products:
+    get:
+      summary: Get all products
+      responses:
+        '200':
+          description: A list of products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+    post:
+      summary: Create a new product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+      responses:
+        '201':
+          description: Product created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          description: Invalid input
+  /products/{id}:
+    delete:
+      summary: Deletes a product by ID
+      operationId: deleteProductById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID of the product to delete
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Product deleted successfully
+        '404':
+          description: Product not found
+    get:
+      summary: Get a product by ID
+      operationId: getProductById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID of the product to delete
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Product get successfully
+        '404':
+          description: Product not found
+      
+
+components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+    ProductInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+      required:
+        - name
+        - price

@@ -1,0 +1,148 @@
+swagger: "2.0"
+info:
+  title: Simple E-commerce API
+  description: A simple API for an e-commerce system with product search.
+  version: 1.0.1
+servers:
+  - url: http://localhost:5000
+paths:
+  /products:
+    get:
+      summary: Get all products
+      operationId: getProducts 
+      description: Returns a list of all products. Can be filtered by name and category.
+      parameters:
+        - name: brands
+          in: query
+          required: false
+          description: Filter products by brand (case-insensitive, partial match).
+          schema:
+            type: string
+        - name: categories
+          in: query
+          required: false
+          description: Filter products by category.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of products.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+    post:
+      summary: Create a new product
+      operationId: createProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+      responses:
+        '201':
+          description: Product created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          description: Invalid input provided.
+  /products/{id}:
+    get:
+      summary: Get a product by ID
+      operationId: getProductById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID of the product to retrieve.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Product retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          description: Product not found.
+    delete:
+      summary: Deletes a product by ID
+      operationId: deleteProductById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID of the product to delete.
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Product deleted successfully.
+        '404':
+          description: Product not found.
+
+components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the product.
+          example: "prod-12345"
+        name:
+          type: string
+          description: Name of the product.
+          example: "Wireless Noise-Cancelling Headphones"
+        category:
+          type: string
+          description: Category the product belongs to.
+          example: "Electronics"
+        description:
+          type: string
+          example: "High-quality headphones with active noise cancellation."
+        brand:
+          type: string
+          example: "SoundGood"
+        price:
+          type: number
+          format: float
+          example: 199.99
+      required:
+        - id
+        - name
+        - category
+        - description
+        - brand
+        - price
+    ProductInput:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the product.
+          example: "Wireless Noise-Cancelling Headphones"
+        category:
+          type: string
+          description: Category the product belongs to.
+          example: "Electronics"
+        description:
+          type: string
+          example: "High-quality headphones with active noise cancellation."
+        brand:
+          type: string
+          example: "SoundGood"
+        price:
+          type: number
+          format: float
+          example: 199.99
+      required:
+        - name
+        - category
+        - price

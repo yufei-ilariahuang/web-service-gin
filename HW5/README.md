@@ -15,6 +15,8 @@ These instructions will get you a copy of the project up and running on your loc
 
 ```bash
 python app.py
+docker build -t product-api .
+docker run -p 5000:5000 product-api
 ```
 ### API Endpoints
 ![alt text](image.png)
@@ -25,7 +27,7 @@ python app.py
 #Method: GET
 #Success Response:
 #Code: 200 OK
-http://localhost:5000/products
+http://localhost:5002/products
 #Response Body:
 [
     {
@@ -65,3 +67,5 @@ http://localhost:5000/products
 ```bash
 "name": "Laptop", "description": "A powerful laptop", "price": 1200.50
 ```
+
+![alt text](image-1.png)

@@ -1,6 +1,10 @@
 # ECS Cluster
 resource "aws_ecs_cluster" "this" {
   name = "${var.service_name}-cluster"
+
+  tags = {
+    Name = "${var.service_name}-cluster"
+  }
 }
 
 # Task Definition
@@ -12,7 +16,7 @@ resource "aws_ecs_task_definition" "this" {
   memory                   = var.memory
 
   execution_role_arn = var.execution_role_arn
-  task_role_arn      = var.tak_role_arn
+  task_role_arn      = var.task_role_arn
 
   container_definitions = jsonencode([{
     name      = "${var.service_name}-container"
@@ -21,6 +25,7 @@ resource "aws_ecs_task_definition" "this" {
 
     portMappings = [{
       containerPort = var.container_port
+      protocol      = "tcp"
     }]
 
     logConfiguration = {
@@ -31,7 +36,20 @@ resource "aws_ecs_task_definition" "this" {
         "awslogs-stream-prefix" = "ecs"
       }
     }
+
+    # Health check endpoint
+    healthCheck = {
+      command     = ["CMD-SHELL", "curl -f http://localhost:${var.container_port}/health || exit 1"]
+      interval    = 30
+      timeout     = 5
+      retries     = 3
+      startPeriod = 60
+    }
   }])
+
+  tags = {
+    Name = "${var.service_name}-task"
+  }
 }
 
 # ECS Service
@@ -43,8 +61,20 @@ resource "aws_ecs_service" "this" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets         = var.subnet_ids
-    security_groups = var.security_group_ids
-    assign_public_ip = true
+    subnets          = var.subnet_ids
+    security_groups  = var.security_group_ids
+    assign_public_ip = false  # Private subnets with NAT
+  }
+
+  load_balancer {
+    target_group_arn = var.target_group_arn
+    container_name   = "${var.service_name}-container"
+    container_port   = var.container_port
+  }
+
+  depends_on = [var.target_group_arn]
+
+  tags = {
+    Name = var.service_name
   }
 }

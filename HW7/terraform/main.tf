@@ -22,13 +22,23 @@ data "aws_iam_role" "lab_role" {
   name = "LabRole"
 }
 
+module "alb" {
+  source                 = "./modules/alb"
+  service_name           = var.service_name
+  vpc_id                 = module.network.vpc_id
+  subnet_ids             = module.network.public_subnet_ids
+  alb_security_group_id  = module.network.alb_security_group_id
+  container_port         = var.container_port
+}
+
 module "ecs" {
   source             = "./modules/ecs"
   service_name       = var.service_name
   image              = "${module.ecr.repository_url}:latest"
   container_port     = var.container_port
-  subnet_ids         = module.network.subnet_ids
-  security_group_ids = [module.network.security_group_id]
+  subnet_ids         = module.network.private_subnet_ids
+  security_group_ids = [module.network.ecs_security_group_id]
+  target_group_arn   = module.alb.target_group_arn
   execution_role_arn = data.aws_iam_role.lab_role.arn
   task_role_arn      = data.aws_iam_role.lab_role.arn
   log_group_name     = module.logging.log_group_name

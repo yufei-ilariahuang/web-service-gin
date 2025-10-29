@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/brianvoe/gofakeit/v6"
@@ -22,109 +24,135 @@ type Product struct {
 	Price       float32 `json:"price"`
 }
 
-// ProductInput defines model for ProductInput.
-type ProductInput struct {
-	Brand       *string `json:"brand,omitempty"`
-	Category    string  `json:"category"`
-	Description *string `json:"description,omitempty"`
-	Name        string  `json:"name"`
-	Price       float32 `json:"price"`
+// Item represents an item in an order
+type Item struct {
+	ProductID string  `json:"product_id"`
+	Quantity  int     `json:"quantity"`
+	Price     float32 `json:"price"`
 }
 
-// GetProductsParams defines parameters for GetProducts.
-type GetProductsParams struct {
-	Brands     *string `form:"brands,omitempty" json:"brands,omitempty"`
-	Categories *string `form:"categories,omitempty" json:"categories,omitempty"`
+// Order defines the complete order structure
+type Order struct {
+	OrderID    string    `json:"order_id"`
+	CustomerID int       `json:"customer_id"`
+	Status     string    `json:"status"` // pending, processing, completed
+	Items      []Item    `json:"items"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
-// Response defines the structure for API responses.
-type Response struct {
-	Products   []Product `json:"products"`
-	TotalFound int       `json:"total_found"`
-	SearchTime string    `json:"search_time"`
+// OrderRequest defines the input for creating an order
+type OrderRequest struct {
+	CustomerID int    `json:"customer_id"`
+	Items      []Item `json:"items"`
+}
+
+// OrderResponse defines the response for an order
+type OrderResponse struct {
+	OrderID        string    `json:"order_id"`
+	CustomerID     int       `json:"customer_id"`
+	Status         string    `json:"status"`
+	Items          []Item    `json:"items"`
+	TotalPrice     float32   `json:"total_price"`
+	CreatedAt      time.Time `json:"created_at"`
+	ProcessingTime string    `json:"processing_time"`
+	QueueTime      string    `json:"queue_time,omitempty"`
+}
+
+// Stats tracks system performance
+type Stats struct {
+	TotalOrders      int64
+	SuccessfulOrders int64
+	FailedOrders     int64
+	TimeoutOrders    int64
+	CurrentQueue     int64
+	MaxQueue         int64
+	mu               sync.Mutex
 }
 
 var (
-	products []Product
-
-	// Define specific brands and categories
-	brands     = []string{"Apple", "Samsung", "Google", "Microsoft", "Sony", "Logitech"}
-	categories = []string{"Electronics", "Books", "Home", "Clothing", "Groceries", "Toys"}
+	products         []Product
+	brands           = []string{"Apple", "Samsung", "Google", "Microsoft", "Sony", "Logitech"}
+	categories       = []string{"Electronics", "Books", "Home", "Clothing", "Groceries", "Toys"}
+	paymentSemaphore = make(chan int, 5) // Limits to 5 concurrent payment verifications
+	orderCounter     int64
+	stats            Stats
 )
 
 func main() {
-	// Seed the random number generator
 	rand.Seed(time.Now().UnixNano())
-
-	// Generate initial product data
 	generateProducts(100000)
 
 	e := echo.New()
+	// Health check endpoint (for ALB)
+	e.GET("/health", healthCheck)
 
-	// Routes
+	// Product routes
 	e.GET("/products", getProducts)
-	e.POST("/products", createProduct)
-	e.DELETE("/products/:id", deleteProductById)
 	e.GET("/products/:id", getProductById)
 
-	// Start server
-	e.Logger.Fatal(e.Start(":8080"))
+	// Order routes - SYNCHRONOUS processing
+	e.POST("/orders/sync", createOrderSync)
+	e.GET("/stats", getStats)
+
+	// Start stats printer
+	go printStats()
+
+	fmt.Println("🚀 Server starting on :8080")
+	fmt.Println("📊 Synchronous order processing")
+	fmt.Println("💳 Payment verification: 3 seconds per order")
+	fmt.Println("⚡ Concurrent payment capacity: 5 orders")
+	fmt.Println("🔥 Watch what breaks during flash sales!\n")
+
+	e.Logger.Fatal(e.Start("0.0.0.0:8080"))
 }
 
-// generateProducts creates a specified number of products with fake data.
+// healthCheck returns a simple 200 OK for ALB health checks
+func healthCheck(c echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]string{
+		"status":  "healthy",
+		"service": "ecommerce-api",
+	})
+}
+
 func generateProducts(count int) {
 	products = make([]Product, count)
 	for i := 0; i < count; i++ {
-		// Randomly select brand and category from defined slices
 		brand := brands[rand.Intn(len(brands))]
 		category := categories[rand.Intn(len(categories))]
-
 		productName := fmt.Sprintf("Product %s %d", gofakeit.AppName(), i+1)
-		description := gofakeit.BS()
-		price := rand.Float32() * 1000 // Random price between 0 and 1000
 
 		products[i] = Product{
 			ID:          strconv.Itoa(i + 1),
 			Name:        productName,
 			Category:    category,
 			Brand:       brand,
-			Description: description,
-			Price:       price,
+			Description: gofakeit.BS(),
+			Price:       rand.Float32() * 1000,
 		}
 	}
-	fmt.Printf("Generated %d products.\n", count)
+	fmt.Printf("✅ Generated %d products.\n\n", count)
 }
 
-// getProducts handles requests to GET /products.
 func getProducts(c echo.Context) error {
-	startTime := time.Now()
-
-	// --- Search Parameters ---
 	brandsParam := c.QueryParam("brands")
 	categoriesParam := c.QueryParam("categories")
 
 	var filteredProducts []Product
-	checkedCount := 0 // This counter is for tracking how many products were checked.
-
-	// Iterate through a limited number of products for searching
 	limit := 100
 	if len(products) < limit {
 		limit = len(products)
 	}
 
 	for i := 0; i < limit; i++ {
-		checkedCount++ // Increment for every product checked
 		product := products[i]
 		match := true
 
-		// Filter by brands (case-insensitive, partial match)
 		if brandsParam != "" {
 			if !strings.Contains(strings.ToLower(product.Brand), strings.ToLower(brandsParam)) {
 				match = false
 			}
 		}
 
-		// Filter by categories (case-insensitive, exact match)
 		if match && categoriesParam != "" {
 			if !strings.EqualFold(product.Category, categoriesParam) {
 				match = false
@@ -136,83 +164,180 @@ func getProducts(c echo.Context) error {
 		}
 	}
 
-	// --- Response ---
-	elapsedTime := time.Since(startTime).Round(time.Millisecond)
-
-	// Limit results to 20
 	if len(filteredProducts) > 20 {
 		filteredProducts = filteredProducts[:20]
 	}
 
-	response := Response{
-		Products:   filteredProducts,
-		TotalFound: len(filteredProducts), // In this simulation, this is the count of matches within the checked limit.
-		SearchTime: elapsedTime.String(),
-	}
-
-	return c.JSON(http.StatusOK, response)
+	return c.JSON(http.StatusOK, filteredProducts)
 }
 
-// createProduct handles requests to POST /products.
-func createProduct(c echo.Context) error {
-	productInput := new(ProductInput)
-	if err := c.Bind(productInput); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "Invalid request body")
-	}
-
-	// Generate a new unique ID
-	// For simplicity in this basic version, we'll assume IDs are sequential.
-	// In a real-world scenario, you'd need a more robust ID generation mechanism.
-	newID := len(products) + 1
-
-	newProduct := Product{
-		ID:          strconv.Itoa(newID),
-		Name:        productInput.Name,
-		Category:    productInput.Category,
-		Price:       productInput.Price,
-		Description: "No description provided", // Default description
-		Brand:       "Unknown Brand",           // Default brand
-	}
-
-	if productInput.Description != nil {
-		newProduct.Description = *productInput.Description
-	}
-	if productInput.Brand != nil {
-		newProduct.Brand = *productInput.Brand
-	}
-
-	// Append the new product directly without locks
-	products = append(products, newProduct)
-
-	return c.JSON(http.StatusCreated, newProduct)
-}
-
-// deleteProductById handles requests to DELETE /products/{id}.
-func deleteProductById(c echo.Context) error {
-	id := c.Param("id")
-
-	// Find the product and remove it without locks
-	for i, p := range products {
-		if p.ID == id {
-			// Remove the product by slicing
-			products = append(products[:i], products[i+1:]...)
-			return c.NoContent(http.StatusNoContent)
-		}
-	}
-
-	return echo.NewHTTPError(http.StatusNotFound, "Product not found")
-}
-
-// getProductById handles requests to GET /products/{id}.
 func getProductById(c echo.Context) error {
 	id := c.Param("id")
-
-	// Retrieve the product without locks
 	for _, p := range products {
 		if p.ID == id {
 			return c.JSON(http.StatusOK, p)
 		}
 	}
-
 	return echo.NewHTTPError(http.StatusNotFound, "Product not found")
+}
+
+// createOrderSync implements SYNCHRONOUS order processing with payment verification bottleneck
+func createOrderSync(c echo.Context) error {
+	startTime := time.Now()
+	atomic.AddInt64(&stats.TotalOrders, 1)
+
+	// Track queue depth
+	currentQueue := atomic.AddInt64(&stats.CurrentQueue, 1)
+	stats.mu.Lock()
+	if currentQueue > stats.MaxQueue {
+		stats.MaxQueue = currentQueue
+	}
+	stats.mu.Unlock()
+
+	defer atomic.AddInt64(&stats.CurrentQueue, -1)
+
+	// Parse request
+	orderReq := new(OrderRequest)
+	if err := c.Bind(orderReq); err != nil {
+		atomic.AddInt64(&stats.FailedOrders, 1)
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid request body")
+	}
+
+	// Validate customer ID
+	if orderReq.CustomerID <= 0 {
+		atomic.AddInt64(&stats.FailedOrders, 1)
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid customer_id")
+	}
+
+	// Validate items
+	if len(orderReq.Items) == 0 {
+		atomic.AddInt64(&stats.FailedOrders, 1)
+		return echo.NewHTTPError(http.StatusBadRequest, "Order must have at least one item")
+	}
+
+	// Validate all products exist and enrich items with prices
+	var totalPrice float32
+	validatedItems := make([]Item, len(orderReq.Items))
+	for i, item := range orderReq.Items {
+		var product *Product
+		for j := range products {
+			if products[j].ID == item.ProductID {
+				product = &products[j]
+				break
+			}
+		}
+
+		if product == nil {
+			atomic.AddInt64(&stats.FailedOrders, 1)
+			return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("Product %s not found", item.ProductID))
+		}
+
+		if item.Quantity <= 0 {
+			atomic.AddInt64(&stats.FailedOrders, 1)
+			return echo.NewHTTPError(http.StatusBadRequest, "Item quantity must be positive")
+		}
+
+		validatedItems[i] = Item{
+			ProductID: item.ProductID,
+			Quantity:  item.Quantity,
+			Price:     product.Price,
+		}
+		totalPrice += product.Price * float32(item.Quantity)
+	}
+
+	// Generate order ID
+	orderID := fmt.Sprintf("ORD-%d", atomic.AddInt64(&orderCounter, 1))
+	createdAt := time.Now()
+	queueTime := time.Since(startTime)
+
+	// SYNCHRONOUS PAYMENT VERIFICATION with semaphore bottleneck
+	// This simulates the real constraint: payment processor can only handle limited throughput
+	select {
+	case paymentSemaphore <- 1: // Acquire semaphore (blocks if 5 payments already processing)
+		defer func() { <-paymentSemaphore }() // Release semaphore
+
+		// Simulate 3-second payment verification delay
+		// This represents the external payment processor bottleneck
+		time.Sleep(3 * time.Second)
+
+		atomic.AddInt64(&stats.SuccessfulOrders, 1)
+
+		response := OrderResponse{
+			OrderID:        orderID,
+			CustomerID:     orderReq.CustomerID,
+			Status:         "completed",
+			Items:          validatedItems,
+			TotalPrice:     totalPrice,
+			CreatedAt:      createdAt,
+			ProcessingTime: time.Since(startTime).Round(time.Millisecond).String(),
+			QueueTime:      queueTime.Round(time.Millisecond).String(),
+		}
+
+		return c.JSON(http.StatusOK, response)
+
+	case <-time.After(30 * time.Second): // Timeout after 30 seconds of waiting
+		atomic.AddInt64(&stats.TimeoutOrders, 1)
+		atomic.AddInt64(&stats.FailedOrders, 1)
+
+		response := OrderResponse{
+			OrderID:        orderID,
+			CustomerID:     orderReq.CustomerID,
+			Status:         "timeout",
+			Items:          validatedItems,
+			TotalPrice:     totalPrice,
+			CreatedAt:      createdAt,
+			ProcessingTime: time.Since(startTime).Round(time.Millisecond).String(),
+			QueueTime:      queueTime.Round(time.Millisecond).String(),
+		}
+
+		return c.JSON(http.StatusServiceUnavailable, response)
+	}
+}
+
+func getStats(c echo.Context) error {
+	stats.mu.Lock()
+	defer stats.mu.Unlock()
+
+	total := atomic.LoadInt64(&stats.TotalOrders)
+	successful := atomic.LoadInt64(&stats.SuccessfulOrders)
+	successRate := 0.0
+	if total > 0 {
+		successRate = float64(successful) / float64(total) * 100
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"total_orders":      total,
+		"successful_orders": successful,
+		"failed_orders":     atomic.LoadInt64(&stats.FailedOrders),
+		"timeout_orders":    atomic.LoadInt64(&stats.TimeoutOrders),
+		"current_queue":     atomic.LoadInt64(&stats.CurrentQueue),
+		"max_queue_seen":    stats.MaxQueue,
+		"success_rate":      fmt.Sprintf("%.2f%%", successRate),
+	})
+}
+
+func printStats() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		total := atomic.LoadInt64(&stats.TotalOrders)
+		if total == 0 {
+			continue
+		}
+
+		successful := atomic.LoadInt64(&stats.SuccessfulOrders)
+		failed := atomic.LoadInt64(&stats.FailedOrders)
+		timeouts := atomic.LoadInt64(&stats.TimeoutOrders)
+		queue := atomic.LoadInt64(&stats.CurrentQueue)
+
+		stats.mu.Lock()
+		maxQueue := stats.MaxQueue
+		stats.mu.Unlock()
+
+		successRate := float64(successful) / float64(total) * 100
+
+		fmt.Printf("\n📊 STATS: Total=%d | Success=%d (%.1f%%) | Failed=%d | Timeouts=%d | Queue=%d | MaxQueue=%d\n",
+			total, successful, successRate, failed, timeouts, queue, maxQueue)
+	}
 }

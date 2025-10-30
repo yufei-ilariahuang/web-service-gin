@@ -1,18 +1,13 @@
-module ecommerce-api
+module order-processor
 
 go 1.23.0
 
 require (
 	github.com/aws/aws-sdk-go v1.55.8
-	github.com/brianvoe/gofakeit/v6 v6.28.0
 	github.com/labstack/echo/v4 v4.13.4
-	github.com/oapi-codegen/runtime v1.1.2
 )
 
 require (
-	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
-	github.com/aws/aws-lambda-go v1.50.0 // indirect
-	github.com/google/uuid v1.5.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect

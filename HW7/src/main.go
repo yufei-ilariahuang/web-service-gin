@@ -1,15 +1,20 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sns"
 	"github.com/brianvoe/gofakeit/v6"
 	"github.com/labstack/echo/v4"
 )
@@ -58,12 +63,21 @@ type OrderResponse struct {
 	QueueTime      string    `json:"queue_time,omitempty"`
 }
 
+// AsyncOrderResponse defines the response for async orders
+type AsyncOrderResponse struct {
+	OrderID   string `json:"order_id"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+	CreatedAt string `json:"created_at"`
+}
+
 // Stats tracks system performance
 type Stats struct {
 	TotalOrders      int64
 	SuccessfulOrders int64
 	FailedOrders     int64
 	TimeoutOrders    int64
+	AsyncOrders      int64
 	CurrentQueue     int64
 	MaxQueue         int64
 	mu               sync.Mutex
@@ -76,11 +90,16 @@ var (
 	paymentSemaphore = make(chan int, 5) // Limits to 5 concurrent payment verifications
 	orderCounter     int64
 	stats            Stats
+	snsClient        *sns.SNS
+	topicARN         string
 )
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	generateProducts(100000)
+
+	// Initialize AWS SNS client
+	initAWS()
 
 	e := echo.New()
 	// Health check endpoint (for ALB)
@@ -90,20 +109,46 @@ func main() {
 	e.GET("/products", getProducts)
 	e.GET("/products/:id", getProductById)
 
-	// Order routes - SYNCHRONOUS processing
+	// Order routes
 	e.POST("/orders/sync", createOrderSync)
+	e.POST("/orders/async", createOrderAsync) // NEW: Async endpoint
 	e.GET("/stats", getStats)
 
 	// Start stats printer
 	go printStats()
 
 	fmt.Println("🚀 Server starting on :8080")
-	fmt.Println("📊 Synchronous order processing")
+	fmt.Println("📊 Synchronous order processing: /orders/sync")
+	fmt.Println("⚡ Asynchronous order processing: /orders/async")
 	fmt.Println("💳 Payment verification: 3 seconds per order")
 	fmt.Println("⚡ Concurrent payment capacity: 5 orders")
 	fmt.Println("🔥 Watch what breaks during flash sales!\n")
 
 	e.Logger.Fatal(e.Start("0.0.0.0:8080"))
+}
+
+// initAWS initializes AWS SDK clients
+func initAWS() {
+	// Get topic ARN from environment variable
+	topicARN = os.Getenv("SNS_TOPIC_ARN")
+	if topicARN == "" {
+		fmt.Println("⚠️  WARNING: SNS_TOPIC_ARN not set. Async endpoint will not work.")
+		fmt.Println("   Set it with: export SNS_TOPIC_ARN=arn:aws:sns:REGION:ACCOUNT_ID:order-processing-events")
+		return
+	}
+
+	// Create AWS session
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String(os.Getenv("AWS_REGION")),
+	})
+	if err != nil {
+		fmt.Printf("❌ Failed to create AWS session: %v\n", err)
+		return
+	}
+
+	snsClient = sns.New(sess)
+	fmt.Printf("✅ AWS SNS client initialized\n")
+	fmt.Printf("📢 Topic ARN: %s\n\n", topicARN)
 }
 
 // healthCheck returns a simple 200 OK for ALB health checks
@@ -179,6 +224,126 @@ func getProductById(c echo.Context) error {
 		}
 	}
 	return echo.NewHTTPError(http.StatusNotFound, "Product not found")
+}
+
+// createOrderAsync implements ASYNCHRONOUS order processing
+// Publishes order to SNS and returns immediately
+func createOrderAsync(c echo.Context) error {
+	startTime := time.Now()
+	atomic.AddInt64(&stats.TotalOrders, 1)
+	atomic.AddInt64(&stats.AsyncOrders, 1)
+
+	// Check if SNS is configured
+	if snsClient == nil || topicARN == "" {
+		atomic.AddInt64(&stats.FailedOrders, 1)
+		return echo.NewHTTPError(http.StatusServiceUnavailable,
+			"Async orders not available: SNS not configured")
+	}
+
+	// Parse request
+	orderReq := new(OrderRequest)
+	if err := c.Bind(orderReq); err != nil {
+		atomic.AddInt64(&stats.FailedOrders, 1)
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid request body")
+	}
+
+	// Validate customer ID
+	if orderReq.CustomerID <= 0 {
+		atomic.AddInt64(&stats.FailedOrders, 1)
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid customer_id")
+	}
+
+	// Validate items
+	if len(orderReq.Items) == 0 {
+		atomic.AddInt64(&stats.FailedOrders, 1)
+		return echo.NewHTTPError(http.StatusBadRequest, "Order must have at least one item")
+	}
+
+	// Validate all products exist and enrich items with prices
+	validatedItems := make([]Item, len(orderReq.Items))
+	for i, item := range orderReq.Items {
+		var product *Product
+		for j := range products {
+			if products[j].ID == item.ProductID {
+				product = &products[j]
+				break
+			}
+		}
+
+		if product == nil {
+			atomic.AddInt64(&stats.FailedOrders, 1)
+			return echo.NewHTTPError(http.StatusNotFound,
+				fmt.Sprintf("Product %s not found", item.ProductID))
+		}
+
+		if item.Quantity <= 0 {
+			atomic.AddInt64(&stats.FailedOrders, 1)
+			return echo.NewHTTPError(http.StatusBadRequest, "Item quantity must be positive")
+		}
+
+		validatedItems[i] = Item{
+			ProductID: item.ProductID,
+			Quantity:  item.Quantity,
+			Price:     product.Price,
+		}
+	}
+
+	// Generate order ID
+	orderID := fmt.Sprintf("ORD-%d", atomic.AddInt64(&orderCounter, 1))
+	createdAt := time.Now()
+
+	// Create order object
+	order := Order{
+		OrderID:    orderID,
+		CustomerID: orderReq.CustomerID,
+		Status:     "pending",
+		Items:      validatedItems,
+		CreatedAt:  createdAt,
+	}
+
+	// Serialize order to JSON
+	orderJSON, err := json.Marshal(order)
+	if err != nil {
+		atomic.AddInt64(&stats.FailedOrders, 1)
+		return echo.NewHTTPError(http.StatusInternalServerError,
+			"Failed to serialize order")
+	}
+
+	// Publish to SNS
+	_, err = snsClient.Publish(&sns.PublishInput{
+		TopicArn: aws.String(topicARN),
+		Message:  aws.String(string(orderJSON)),
+		MessageAttributes: map[string]*sns.MessageAttributeValue{
+			"order_id": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(orderID),
+			},
+			"customer_id": {
+				DataType:    aws.String("Number"),
+				StringValue: aws.String(fmt.Sprintf("%d", orderReq.CustomerID)),
+			},
+		},
+	})
+
+	if err != nil {
+		atomic.AddInt64(&stats.FailedOrders, 1)
+		fmt.Printf("❌ Failed to publish order %s to SNS: %v\n", orderID, err)
+		return echo.NewHTTPError(http.StatusInternalServerError,
+			"Failed to publish order for processing")
+	}
+
+	processingTime := time.Since(startTime)
+	fmt.Printf("✅ Order %s published to SNS in %v\n", orderID, processingTime.Round(time.Millisecond))
+
+	// Return 202 Accepted immediately
+	response := AsyncOrderResponse{
+		OrderID:   orderID,
+		Status:    "pending",
+		Message:   "Order received and is being processed",
+		CreatedAt: createdAt.Format(time.RFC3339),
+	}
+
+	return c.JSON(http.StatusAccepted, response)
 }
 
 // createOrderSync implements SYNCHRONOUS order processing with payment verification bottleneck
@@ -300,6 +465,7 @@ func getStats(c echo.Context) error {
 
 	total := atomic.LoadInt64(&stats.TotalOrders)
 	successful := atomic.LoadInt64(&stats.SuccessfulOrders)
+	async := atomic.LoadInt64(&stats.AsyncOrders)
 	successRate := 0.0
 	if total > 0 {
 		successRate = float64(successful) / float64(total) * 100
@@ -310,6 +476,7 @@ func getStats(c echo.Context) error {
 		"successful_orders": successful,
 		"failed_orders":     atomic.LoadInt64(&stats.FailedOrders),
 		"timeout_orders":    atomic.LoadInt64(&stats.TimeoutOrders),
+		"async_orders":      async,
 		"current_queue":     atomic.LoadInt64(&stats.CurrentQueue),
 		"max_queue_seen":    stats.MaxQueue,
 		"success_rate":      fmt.Sprintf("%.2f%%", successRate),
@@ -329,6 +496,7 @@ func printStats() {
 		successful := atomic.LoadInt64(&stats.SuccessfulOrders)
 		failed := atomic.LoadInt64(&stats.FailedOrders)
 		timeouts := atomic.LoadInt64(&stats.TimeoutOrders)
+		async := atomic.LoadInt64(&stats.AsyncOrders)
 		queue := atomic.LoadInt64(&stats.CurrentQueue)
 
 		stats.mu.Lock()
@@ -337,7 +505,7 @@ func printStats() {
 
 		successRate := float64(successful) / float64(total) * 100
 
-		fmt.Printf("\n📊 STATS: Total=%d | Success=%d (%.1f%%) | Failed=%d | Timeouts=%d | Queue=%d | MaxQueue=%d\n",
-			total, successful, successRate, failed, timeouts, queue, maxQueue)
+		fmt.Printf("\n📊 STATS: Total=%d | Success=%d (%.1f%%) | Failed=%d | Timeouts=%d | Async=%d | Queue=%d | MaxQueue=%d\n",
+			total, successful, successRate, failed, timeouts, async, queue, maxQueue)
 	}
 }

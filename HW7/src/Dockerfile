@@ -1,7 +1,8 @@
 # --- Stage 1: Build ---
 # Use a specific version of the official Go image as the builder.
 # Using alpine for a smaller builder image.
-FROM --platform=linux/amd64 golang:1.25.0 AS builder
+# docker build --platform linux/amd64 -t order-receiver:latest .
+FROM --platform=linux/amd64 golang:1.23.0 AS builder
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -26,6 +27,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -v -o /app/server .
 # Use a minimal, non-root base image for the final container.
 # alpine is very small and secure.
 FROM --platform=linux/amd64 alpine:latest
+
+# ADDED: Install curl for ECS health checks
+RUN apk --no-cache add curl ca-certificates
 
 # Copy only the compiled binary from the builder stage.
 COPY --from=builder /app/server /app/server

@@ -17,7 +17,6 @@ Connection pooling manages a set of reusable database connections. Instead of cr
 ---
 
 ## 2. Database Schema Design for Performance
-```bash
 
 | Change | Reason | Impact |
 |--------|--------|--------|
@@ -26,11 +25,11 @@ Connection pooling manages a set of reusable database connections. Instead of cr
 | `UNIQUE KEY unique_cart_product` | Prevents duplicate items in cart | Allows safe ON DUPLICATE UPDATE |
 | `updated_at TIMESTAMP` | Track when cart was modified | Useful for cache invalidation |
 | `ENGINE=InnoDB` | Required for ACID transactions | Safe concurrent updates |
-```
+
 ---
 
 ## Key Learnings Summary
-```bash
+
 | Concept | Learning | Result |
 |---------|----------|--------|
 | **Connection Pooling** | Need to balance pool size with server limits | 25 connections = optimal for RDS t3.micro |
@@ -39,7 +38,7 @@ Connection pooling manages a set of reusable database connections. Instead of cr
 | **Validation** | Input validation prevents injection attacks | Parameterized queries + type checking = safe |
 | **Error Handling** | Specific errors enable proper HTTP responses | Distinguish 404 vs 500 vs 503 |
 | **Query Optimization** | JOIN is better than N+1 queries | Single query = 4x faster than 2 queries |
-```
+
 ---
 
 ## Testing Checklist

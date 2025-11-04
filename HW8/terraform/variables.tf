@@ -7,7 +7,7 @@ variable "aws_region" {
 # ECR & ECS settings
 variable "ecr_repository_name" {
   type    = string
-  default = "ecr_service"
+  default = "cs6650l2-repo"
 }
 
 variable "service_name" {
@@ -29,4 +29,26 @@ variable "ecs_count" {
 variable "log_retention_days" {
   type    = number
   default = 7
+}
+
+# Database settings
+variable "db_name" {
+  type    = string
+  default = "mydb"
+}
+
+variable "db_username" {
+  type    = string
+  default = "admin"
+}
+
+variable "db_password" {
+  type      = string
+  sensitive = true
+}
+
+# DynamoDB settings
+variable "dynamodb_table_name" {
+  type    = string
+  default = "shopping-cart"
 }

@@ -10,8 +10,15 @@ import (
 	"time"
 )
 
-// CreateCart creates a new shopping cart
-func CreateCart(ctx context.Context, customerID int32) (int32, error) {
+// mysqlStore implements Store using the existing SQL schema/connection
+type mysqlStore struct{}
+
+func NewMySQLStore() Store {
+	return &mysqlStore{}
+}
+
+// CreateCart creates a new shopping cart (MySQL)
+func (m *mysqlStore) CreateCart(ctx context.Context, customerID int32) (int32, error) {
 	query := "INSERT INTO shopping_carts (customer_id) VALUES (?)"
 
 	result, err := DB.ExecContext(ctx, query, customerID)
@@ -27,13 +34,13 @@ func CreateCart(ctx context.Context, customerID int32) (int32, error) {
 	return int32(id), nil
 }
 
-// GetCart retrieves a shopping cart with all items
-func GetCart(ctx context.Context, cartID int32) (*api.ShoppingCart, error) {
+// GetCart retrieves a shopping cart with all items (MySQL)
+func (m *mysqlStore) GetCart(ctx context.Context, cartID int32) (*api.ShoppingCart, error) {
 	query := `
-        SELECT sc.id, sc.customer_id, sc.created_at
-        FROM shopping_carts sc
-        WHERE sc.id = ?
-    `
+		SELECT sc.id, sc.customer_id, sc.created_at
+		FROM shopping_carts sc
+		WHERE sc.id = ?
+	`
 
 	cart := &api.ShoppingCart{}
 	var createdAtStr string // ← Parse as string first
@@ -70,11 +77,11 @@ func GetCart(ctx context.Context, cartID int32) (*api.ShoppingCart, error) {
 	fmt.Printf("DEBUG: Cart found: ID=%d, CustomerID=%d\n", cart.ShoppingCartId, cart.CustomerId)
 	// Get items for this cart
 	itemsQuery := `
-        SELECT product_id, quantity
-        FROM cart_items
-        WHERE shopping_cart_id = ?
+		SELECT product_id, quantity
+		FROM cart_items
+		WHERE shopping_cart_id = ?
 		ORDER BY created_at ASC
-    `
+	`
 
 	rows, err := DB.QueryContext(ctx, itemsQuery, cartID)
 	if err != nil {
@@ -99,13 +106,13 @@ func GetCart(ctx context.Context, cartID int32) (*api.ShoppingCart, error) {
 	return cart, nil
 }
 
-// AddItemToCart adds or updates an item in the cart
-func AddItemToCart(ctx context.Context, cartID, productID, quantity int32) error {
+// AddItemToCart adds or updates an item in the cart (MySQL)
+func (m *mysqlStore) AddItemToCart(ctx context.Context, cartID, productID, quantity int32) error {
 	query := `
-        INSERT INTO cart_items (shopping_cart_id, product_id, quantity)
-        VALUES (?, ?, ?)
-        ON DUPLICATE KEY UPDATE quantity = quantity + ?
-    `
+		INSERT INTO cart_items (shopping_cart_id, product_id, quantity)
+		VALUES (?, ?, ?)
+		ON DUPLICATE KEY UPDATE quantity = quantity + ?
+	`
 
 	_, err := DB.ExecContext(ctx, query, cartID, productID, quantity, quantity)
 	if err != nil {

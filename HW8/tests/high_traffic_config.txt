@@ -1,0 +1,38 @@
+# High-Traffic Events Configuration
+# Run with: locust -f locustfile.py --class-picker --host=http://your-api-endpoint
+
+# Target: 50K normal, 1M spike users/day
+# Run Settings:
+# Normal:
+# - Users: 2000
+# - Spawn rate: 50 users/second
+# Spike:
+# - Users: 40000
+# - Spawn rate: 1000 users/second
+
+# Commands:
+# Normal load:
+# locust -f locustfile.py HighTrafficEvents --host=http://your-api-endpoint --users 2000 --spawn-rate 50 --run-time 1h
+
+# Spike test:
+# locust -f locustfile.py HighTrafficEvents --host=http://your-api-endpoint --users 40000 --spawn-rate 1000 --run-time 30m
+
+# Expectations:
+# Normal:
+# - Average response time < 300ms
+# - 99th percentile < 1000ms
+# - Error rate < 5%
+# Spike:
+# - Average response time < 1000ms
+# - 99th percentile < 3000ms
+# - Error rate < 10%
+
+# Test Variations:
+# 1. Normal operation: 2000 users
+#    locust -f locustfile.py HighTrafficEvents --users 2000 --spawn-rate 50
+#
+# 2. Pre-event ramp-up: 5000 users
+#    locust -f locustfile.py HighTrafficEvents --users 5000 --spawn-rate 100
+#
+# 3. Flash sale spike: 40000 users
+#    locust -f locustfile.py HighTrafficEvents --users 40000 --spawn-rate 1000

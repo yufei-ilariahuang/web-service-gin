@@ -1,38 +1,41 @@
-# --- Stage 1: Build ---
-# Use a specific version of the official Go image as the builder.
-# Using alpine for a smaller builder image.
-# docker build --platform linux/amd64 -t order-receiver:latest .
-FROM --platform=linux/amd64 golang:1.25.0 AS builder
+# Build stage
+FROM --platform=linux/amd64 golang:1.25-alpine AS builder
 
-# Set the working directory inside the container
+# Install git and build dependencies
+RUN apk add --no-cache git build-base
+
+# Set working directory
 WORKDIR /app
 
-# Copy the dependency files first to leverage Docker's build cache.
-# This step will only be re-run if go.mod or go.sum changes.
+# Copy go mod files first for better cache
 COPY go.mod go.sum ./
 
-# Download all the dependencies
+# Download dependencies
 RUN go mod download
 
-# Copy the rest of the source code into the container
+# Copy the rest of the source code
 COPY . .
 
-# Build the Go application, creating a statically linked binary.
-# CGO_ENABLED=0 is important for creating a pure Go binary without C dependencies.
-# -o specifies the output file name.
-RUN CGO_ENABLED=0 GOOS=linux go build -v -o /app/server .
+# Build the application for linux/amd64
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -o server
 
+# Final stage
+FROM --platform=linux/amd64 alpine:3.18
 
-# --- Stage 2: Final Image ---
-# Use a minimal, non-root base image for the final container.
-# alpine is very small and secure.
-FROM --platform=linux/amd64 alpine:latest
+# Install curl for health checks and CA certificates for HTTPS
+RUN apk add --no-cache curl ca-certificates
 
-# ADDED: Install curl for ECS health checks
-RUN apk --no-cache add curl ca-certificates
-
-# Copy only the compiled binary from the builder stage.
+# Copy the binary from builder
 COPY --from=builder /app/server /app/server
+
+# Set working directory
+WORKDIR /app
+
+# Expose port
+EXPOSE 8080
+
+# Run the binary
+CMD ["/app/server"]
 
 # Expose the port that the application listens on.
 EXPOSE 8080

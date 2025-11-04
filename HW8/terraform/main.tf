@@ -44,6 +44,26 @@ module "ecs" {
   log_group_name     = module.logging.log_group_name
   ecs_count          = var.ecs_count
   region             = var.aws_region
+  db_endpoint        = module.rds.db_instance_endpoint
+  db_name            = module.rds.db_instance_name
+  db_user            = module.rds.db_instance_username
+  db_password        = module.rds.db_instance_password
+  dynamodb_table_name = module.dynamodb.table_name
+}
+
+module "dynamodb" {
+  source       = "./modules/dynamodb"
+  service_name = var.service_name
+}
+
+module "rds" {
+  source          = "./modules/rds"
+  db_name         = var.db_name
+  db_username     = var.db_username
+  db_password     = var.db_password
+  private_subnets = module.network.private_subnet_ids
+  vpc_id          = module.network.vpc_id
+  ecs_sg_id       = module.network.ecs_security_group_id
 }
 
 

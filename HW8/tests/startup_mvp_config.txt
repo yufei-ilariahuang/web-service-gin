@@ -1,0 +1,27 @@
+# Startup MVP Configuration
+# Run with: locust -f locustfile.py --class-picker --host=http://your-api-endpoint
+
+# Target: 100 users/day = ~4 concurrent users (8-hour day)
+# Run Settings:
+# - Users: 4
+# - Spawn rate: 1 user/second
+# - Duration: 1 hour
+
+# Command:
+# locust -f locustfile.py StartupMVP --host=http://your-api-endpoint --users 4 --spawn-rate 1 --run-time 1h
+
+# Expectations:
+# - Average response time < 100ms
+# - 99th percentile < 200ms
+# - Error rate < 1%
+# - Database connections < 10
+
+# Test Variations:
+# 1. Normal operation: 4 users
+#    locust -f locustfile.py StartupMVP --users 4 --spawn-rate 1
+#
+# 2. Peak hours (2x load): 8 users
+#    locust -f locustfile.py StartupMVP --users 8 --spawn-rate 2
+#
+# 3. Low activity: 2 users
+#    locust -f locustfile.py StartupMVP --users 2 --spawn-rate 1

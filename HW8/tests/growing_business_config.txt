@@ -1,0 +1,27 @@
+# Growing Business Configuration
+# Run with: locust -f locustfile.py --class-picker --host=http://your-api-endpoint
+
+# Target: 10K users/day = ~400 concurrent users (8-hour day)
+# Run Settings:
+# - Users: 400
+# - Spawn rate: 10 users/second
+# - Duration: 1 hour
+
+# Command:
+# locust -f locustfile.py GrowingBusiness --host=http://your-api-endpoint --users 400 --spawn-rate 10 --run-time 1h
+
+# Expectations:
+# - Average response time < 200ms
+# - 99th percentile < 500ms
+# - Error rate < 2%
+# - Database connections < 100
+
+# Test Variations:
+# 1. Normal operation: 400 users
+#    locust -f locustfile.py GrowingBusiness --users 400 --spawn-rate 10
+#
+# 2. Peak hours (2x load): 800 users
+#    locust -f locustfile.py GrowingBusiness --users 800 --spawn-rate 20
+#
+# 3. Feature launch spike: 1000 users
+#    locust -f locustfile.py GrowingBusiness --users 1000 --spawn-rate 50

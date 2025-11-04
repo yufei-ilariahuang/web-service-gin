@@ -1,0 +1,33 @@
+# Global Platform Configuration
+# Run with: locust -f locustfile.py --class-picker --host=http://your-api-endpoint
+
+# Target: Millions of users = 100000+ concurrent
+# Run Settings:
+# - Users: 100000
+# - Spawn rate: 1000 users/second
+# - Duration: 2 hours
+
+# Command:
+# locust -f locustfile.py GlobalPlatform --host=http://your-api-endpoint --users 100000 --spawn-rate 1000 --run-time 2h
+
+# Expectations:
+# - Average response time < 500ms
+# - 99th percentile < 2000ms
+# - Error rate < 1%
+# - Multi-region latency variation < 100ms
+
+# Test Variations:
+# 1. Global baseline: 100000 users
+#    locust -f locustfile.py GlobalPlatform --users 100000 --spawn-rate 1000
+#
+# 2. Regional spike (2x load in one region): 150000 users
+#    locust -f locustfile.py GlobalPlatform --users 150000 --spawn-rate 2000
+#
+# 3. Global event (3x load): 300000 users
+#    locust -f locustfile.py GlobalPlatform --users 300000 --spawn-rate 3000
+
+# Multi-Region Testing:
+# Run simultaneous tests from different regions:
+# Region 1: --host=http://us-east.api-endpoint
+# Region 2: --host=http://eu-west.api-endpoint
+# Region 3: --host=http://ap-south.api-endpoint

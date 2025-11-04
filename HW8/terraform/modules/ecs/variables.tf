@@ -28,6 +28,12 @@ variable "execution_role_arn" {
   description = "ECS Task Execution Role ARN"
 }
 
+variable "db_backend" {
+  type        = string
+  description = "Database backend to use (mysql or dynamodb)"
+  default     = "mysql"
+}
+
 variable "task_role_arn" {
   type        = string
   description = "IAM Role ARN for app permissions"
@@ -62,6 +68,83 @@ variable "memory" {
 }
 
 variable "target_group_arn" {
+
   type        = string
+
   description = "ALB Target Group ARN"
+
 }
+
+
+
+variable "db_endpoint" {
+
+  type        = string
+
+  description = "RDS instance endpoint"
+
+}
+
+
+
+variable "db_name" {
+
+  type        = string
+
+  description = "RDS database name"
+
+}
+
+
+
+variable "db_user" {
+
+  type        = string
+
+  description = "RDS database user"
+
+}
+
+
+
+variable "db_password" {
+
+
+
+  type        = string
+
+
+
+  description = "RDS database password"
+
+
+
+  sensitive   = true
+
+
+
+}
+
+
+
+
+
+
+
+variable "dynamodb_table_name" {
+
+
+
+  type        = string
+
+
+
+  description = "DynamoDB table name"
+
+
+
+}
+
+
+
+

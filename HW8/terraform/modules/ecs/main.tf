@@ -28,6 +28,15 @@ resource "aws_ecs_task_definition" "this" {
       protocol      = "tcp"
     }]
 
+    environment = [
+      # MySQL environment - force MySQL backend
+      { name = "DB_BACKEND", value = "mysql" },
+      { name = "DB_ENDPOINT", value = var.db_endpoint },
+      { name = "DB_NAME", value = "ecommerce" },
+      { name = "DB_USER", value = var.db_user },
+      { name = "DB_PASSWORD", value = var.db_password }
+    ]
+
     logConfiguration = {
       logDriver = "awslogs"
       options = {

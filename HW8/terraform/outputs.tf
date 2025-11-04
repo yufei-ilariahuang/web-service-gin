@@ -24,6 +24,19 @@ output "alb_dns_name" {
 }
 
 output "alb_url" {
+
   description = "Full URL to access the service"
+
   value       = "http://${module.alb.alb_dns_name}"
+
+}
+
+
+
+output "rds_endpoint" {
+
+  description = "RDS instance endpoint"
+
+  value       = module.rds.db_instance_endpoint
+
 }
